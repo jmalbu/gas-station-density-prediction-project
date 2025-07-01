@@ -1,0 +1,1208 @@
+---
+title: "Master Code ECON 573 Research Project"
+author: "Sergiy Mouradkhanian"
+date: "2025-04-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+# Data Visualization
+
+We can visualize the first 6 observations for our dataset
+
+In our Data set, we have a lot of variables that measure similar things. For example, we have various measures that measure population based on different attributes such as Race, age groups, poverty levels, education, urban/rural, etc. We expect these variables to be heavily correlated to each other. 
+
+We also have various employnment measures such as the Average Annual Employment by Place of Work and teh Unemployment Rate. As well as various measures for Income such as Median Household Income, Annual Wages by Place of Work. We're interested to see if these variables capture different areas of gas station density at the county level in north Carolina.
+
+For the purpose of our research, we don't expect all of these variables to play an important role in the regression of gas station as they all measure county-level population and follow the same trends. However, we're interest to see which of these measures is important.
+
+```{r}
+rm(list = ls())
+
+# Our data comes from 2020 North Carolina Data at the county level. Since there is 100 counties in north carolina, we have 100 osbservations.
+
+Gas_raw <- read.csv("nc_gas_scaled.csv", na.strings = "?", stringsAsFactors = T )
+dim(Gas_raw)
+head(Gas_raw)
+
+# We plot a few of these population measures and observe that indeed, a few of them seem to be correlated. Such as CHILD and UPOP, VOTING and UPOP, or the general measure POP with all of them. 
+
+pairs(
+  ~ voting + child + pop05 + upop + fpov + ppov + pop, data = Gas_raw
+)
+```
+
+# Linear Regression 
+
+```{r}
+# Loading our regularized data
+Gas0 <- read.csv("nc_gas_scaled.csv", na.strings = "?", stringsAsFactors = T)
+
+# Performing the regression on the model with all the variables. 
+lm.fit <- lm(gas ~ ., data = Gas0)
+summary(lm.fit)
+
+# pop, other, child, and prpval were dropped because they are linearly dependent on others. It seems that hips, aaepw, and aiw are the only statistically significant variables. 
+
+plot(predict(lm.fit), residuals(lm.fit))
+plot(predict(lm.fit), rstudent(lm.fit))
+
+# Identifying Problematic Variables; alias tells us which linear combinations from each other.
+
+alias(lm(gas ~ ., data = Gas0))
+
+# pop, child, other and prpval are causing aliasing, or multiple collinearity, so we create a new data set without these variables.
+
+Gas <- Gas0[, !(names(Gas0) %in% c("pop", "child", "other", "prpval"))]
+
+
+# We perform a new linear regression on the new using the new data set.
+
+lm.fit2 <- lm(gas ~ ., data = Gas)
+summary(lm.fit2)
+
+# By removing, pop, child, other, and ppval we see that linear regression on our model has a higher adjusted Rsquared compared to the previous model (0.9766 >0.976), althouhg its not a lot its an improvement. We see that the variable for the hispanic population retains its statistic importance, while aaepw increase, and aiw gains some statistoc significant at the 0.05 level. 
+
+
+library(car)
+
+# getting the predictors
+
+predictors <- Gas[, !(names(Gas) %in% "gas")]
+library(corrplot)
+
+# Computing the correlation matrix
+
+cor_matrix <- cor(predictors, use = "pairwise.complete.obs")
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.7, tl.col = "black")
+
+# We see a lot of heavily correlated variables in our original model. We have a lot problematic variables and there is celarly a collinearity problem in the data. Howerver, we are not able to get the full scope of the problem by simply inspecting the correlation matrix. There is most likely multicollinearity present in teh data. 
+
+# We compute the variance infation factor for all variables to assess multicollinearity.
+
+vif_values <- vif(lm.fit2)
+sorted_vif <- sort(vif_values, decreasing = TRUE)
+print(sorted_vif)
+
+
+# We observe a serious multicollinearity problem, as we a large amount of variables with values above 100, with some even reaching over 150,000.
+
+# We can further remove these variable from our mode and perform another linear regression.
+
+# Start by removing highest-VIF variable (hs and x9gr)
+
+Gas <- Gas[, !(names(Gas) %in% c("pop", "child", "other", "prpval", "hs", "x9gr"))]
+names(Gas)
+
+# Refit and recheck
+lm.fit3 <- lm(gas ~ ., data = Gas)
+summary(lm.fit3)
+
+# we don't get an improvement from our previous model. 
+
+vif_values2 <- vif(lm.fit3)
+sorted_vif2 <- sort(vif_values2, decreasing = TRUE)
+print(sorted_vif2)
+
+# we still have exteme multicollinear variables. We remove the ones with values over 1000.
+
+Gas <- Gas[, !(names(Gas) %in% c("pop", "child", "other", "prpval", "hs", "x9gr", "voting", "upop", "bach"))]
+names(Gas)
+
+lm.fit4 <- lm(gas ~ ., data = Gas)
+summary(lm.fit4)
+
+# We get a minor improvement with adjust rsquared, the same variables remaing significant.
+
+library(car)
+vif_values3 <- vif(lm.fit4)
+sorted_vif3 <- sort(vif_values3, decreasing = TRUE)
+print(sorted_vif3)
+
+# There are still some variables with very high IVF values, however hisp and aaepw appear to be statistifclaly significant such taht the explain a lot of the variance in the regression, so we'll keep them. We remove all variables with over 50 VIF that are not statistifcaly significant.
+
+Gas <- Gas[, !(names(Gas) %in% c("pop", "child", "other", "prpval", "hs", "x9gr", "voting", "upop", "bach", "awpw", "retax", "shigh", "ppov", "agmort", "noveh", "white", "nomuns", "fpov", "black"))]
+names(Gas)
+
+lm.fit5 <- lm(gas ~ ., data = Gas)
+summary(lm.fit5)
+
+# We see that rpop, black, munp and crime gain statistical signficance; however, our Adjuste R-squared greatly decreased.
+
+
+vif_values5 <- vif(lm.fit5)
+sorted_vif5 <- sort(vif_values5, decreasing = TRUE)
+print(sorted_vif5)
+
+# The VIF values for the variables that are left was greatly decreases. There is still mdoerate collinearity (>5) present in the model, we proceed to remove those that aren't statistically significant to compare.
+
+
+Gas <- Gas[, !(names(Gas) %in% c("pop", "child", "other", "prpval", "hs", "x9gr", "voting", "upop", "bach", "aaepw", "awpw", "retax", "shigh", "ppov", "agmort", "noveh", "white", "nomuns", "fpov", "black", "capin", "munp", "mhi", "mhv"))]
+names(Gas)
+
+# perform linear regression on the new model.
+
+lm.fit6 <- lm(gas ~ ., data = Gas)
+summary(lm.fit6)
+
+# munp, rpop, and hisp retain theri statistical signficance, wis and capin gain some, and crime loses its.
+
+
+vif_values6 <- vif(lm.fit6)
+sorted_vif6 <- sort(vif_values6, decreasing = TRUE)
+print(sorted_vif6)
+
+# Pop05 loses it's statistical significance and we can see has a problematic VIF value, so we remove it.
+
+
+Gas <- Gas[, !(names(Gas) %in% c("pop", "child", "other", "prpval", "hs", "x9gr", "voting", "upop", "bach", "aaepw", "awpw", "retax", "shigh", "ppov", "agmort", "noveh", "white", "nomuns", "fpov", "black", "capin", "munp", "mhi", "mhv", "pop05"))]
+names(Gas)
+
+lm.fit7 <- lm(gas ~ ., data = Gas)
+summary(lm.fit7)
+
+vif_values7 <- vif(lm.fit7)
+sorted_vif7 <- sort(vif_values7, decreasing = TRUE)
+print(sorted_vif7)
+
+# Although we end up with a model thas has a lower Adjusted R-Squared, we now have fixed the issue of having highly correlated variabels. Most of the variables that are left in the model seem to be statistically significant. Out of the 35 predictors we started with, we reduced the model to only having 8 based on their IVF to fixe the multicollinearity present in our model. However, we can try other variable selection methods to compare the values.
+
+library(boot)
+
+models <- list(lm.fit, lm.fit2, lm.fit3, lm.fit4, lm.fit5, lm.fit6, lm.fit7)
+
+cv_errors <- sapply(models, function(model) {
+  model_data <- model.frame(model)  # exact data used in that model
+  cv.glm(model_data, glm(formula(model), data = model_data), K=10)$delta[1]
+})
+cv_errors
+
+train_errors <- sapply(models, function(model) {
+  mean(model$residuals^2)
+})
+
+# Create a comparison table
+
+results <- data.frame(
+  Model = paste0("lm.fit", c("", 2:7)),
+  CV_Error = cv_errors,
+  Train_MSE = train_errors
+)
+
+print(results)
+
+plot(1:7, cv_errors, type="b", col="blue", pch=16,
+     xlab="Model Number", ylab="10-Fold Cross-Validation Error",
+     main="CV Error Comparison of Linear Models") + lines(1:7, train_errors, type="b", col="red", pch=16)
+legend("topright", legend=c("CV Error", "Training MSE"), col=c("blue", "red"), pch=16)
+
+# While lm.fit initially achieved the highest in-sample adjusted R-squared, its cross-validation performance was extremely poor due to severe multicollinearity. As variables with high VIF values were iteratively removed, model performance improved drastically. The fourth iteration (lm.fit4) achieved the lowest 10-fold cross-validated error, suggesting that it balances explanatory power and model stability most effectively. Further reductions in variables beyond this point slightly increased prediction error, indicating potential underfitting.
+
+```
+
+# Variable Selection 
+
+## Best Subset Selection
+
+```{r}
+rm(list = ls())
+
+# Loading our regularized data
+Gas0 <- read.csv("nc_gas_scaled.csv", na.strings = "?", stringsAsFactors = T)
+Gas <- Gas0[, !(names(Gas0) %in% c("pop", "child", "other", "prpval"))] # getting rid of aliasing
+
+#We perform best subset selection on the data with aliasing. 
+
+library(leaps)
+
+regfit.full <- regsubsets(gas ~ ., data = Gas, nvmax = 35)
+reg.summary <- summary(regfit.full)
+reg.summary
+
+# We observe that aiw, upop, fpov, hisp, awpw, aaepw, shigh and retax seem to be important as they are included in at least 2/3 of the models. Variables such as pop05, mhv, white, black, and crime are seem somewhat important as they are included in at least 1/2 of the models.
+
+names(reg.summary)
+
+reg.summary$rsq
+reg.summary$rss
+
+# As expected, the R^2 statistic increases as more variables are added to the model. Conversely, the RSS decreases monotonically as more variables are added.
+
+reg.summary$adjr2
+max(reg.summary$adjr2)
+which.max(reg.summary$adjr2)
+
+# However, we see that the maximum value for adjusted R^2 is 0.9792946 which is achieved by the model with 12 variables, and after that it decreases as we add more variables.
+
+coef(regfit.full, 12)
+
+# We continue to compare different statistics such as the Cp and the BIC to compare goodness of fit.
+
+plot(reg.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l") + points(12, reg.summary$adjr2[12], col = "red", cex = 2, pch = 20)
+
+reg.summary$cp
+min(reg.summary$cp)
+which.min(reg.summary$cp)
+
+# We see that the model with the least Cp value is the one with 8 variables.
+
+plot(reg.summary$cp, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l") + points(8, reg.summary$cp[8], col = "red", cex = 2, pch = 20)
+
+reg.summary$bic
+min(reg.summary$bic)
+which.min(reg.summary$bic)
+
+plot(reg.summary$bic, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l") + points(8, reg.summary$bic[8], col = "red", cex = 2, pch = 20)
+
+coef(regfit.full, 8)
+
+plot(regfit.full, scale = "r2")
+plot(regfit.full, scale = "adjr2")
+plot(regfit.full, scale = "Cp")
+plot(regfit.full, scale = "bic")
+
+# plots of the variables included (black sqaures) according to the optimal model associated with that statistic. 
+
+# Conclusion, Choose the one with 8 variables.
+```
+
+## Forward and Backward Stepwise Selection
+
+### Forward
+
+```{r}
+regfit.fwd <- regsubsets(gas ~ ., data = Gas, nvmax = 35, method = "forward")
+fwd.summary <- summary(regfit.fwd)
+fwd.summary
+
+names(fwd.summary)
+
+# Comparing R^2 and RSS of all the models
+fwd.summary$rsq
+fwd.summary$rss
+which.min(fwd.summary$rss)
+
+# We compare statistic for model fit
+
+# Comparing Adjusted R^2
+fwd.summary$adjr2
+max(fwd.summary$adjr2)
+which.max(fwd.summary$adjr2)
+
+# Model with 16 variables has the highest R^2.
+
+# Comparing BIC
+fwd.summary$bic
+min(fwd.summary$bic)
+which.min(fwd.summary$bic)
+
+#Comparing cp
+fwd.summary$cp
+min(fwd.summary$cp)
+which.min(fwd.summary$cp)
+
+par(mfrow = c(2, 2))
+plot(fwd.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")+ points(29, fwd.summary$rss[29], col = "red", cex = 2, pch = 20)
+
+plot(fwd.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")+ points(16, fwd.summary$adjr2[16], col = "red", cex = 2, pch = 20)
+
+plot(fwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")+ points(9, fwd.summary$bic[9], col = "red", cex = 2, pch = 20)
+
+plot(fwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")+ points(11, fwd.summary$cp[11], col = "red", cex = 2, pch = 20)
+
+coef(regfit.fwd, 9)
+coef(regfit.fwd, 11)
+coef(regfit.fwd, 16)
+```
+
+### Backward
+
+```{r}
+regfit.bwd <- regsubsets(gas ~ ., data = Gas, nvmax = 35, method = "backward")
+bwd.summary <- summary(regfit.bwd)
+bwd.summary
+
+names(bwd.summary)
+
+# Comparing R^2 and RSS of all the models
+
+bwd.summary$rsq
+bwd.summary$rss
+min(bwd.summary$rss)
+which.min(bwd.summary$rss)
+
+# We compare statistic for model fit
+
+# Comparing Adjusted R^2
+bwd.summary$adjr2
+max(bwd.summary$adjr2)
+which.max(bwd.summary$adjr2)
+
+# Model with 15 variables has the highest R^2.
+
+#Comparing BIC
+bwd.summary$bic
+min(bwd.summary$bic)
+which.min(bwd.summary$bic)
+
+#Comparing Cp
+bwd.summary$cp
+min(bwd.summary$cp)
+which.min(bwd.summary$cp)
+
+coef(regfit.bwd, 6)
+coef(regfit.bwd, 9)
+coef(regfit.bwd, 15)
+
+par(mfrow = c(2, 2))
+plot(bwd.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l") + points(29, bwd.summary$rss[29], col = "red", cex = 2, pch = 20)
+
+plot(bwd.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l") + points(15, bwd.summary$adjr2[15], col = "red", cex = 2, pch = 20)
+
+plot(bwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l") + points(6, bwd.summary$bic[6], col = "red", cex = 2, pch = 20)
+
+plot(bwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l") + points(9, bwd.summary$cp[9], col = "red", cex = 2, pch = 20)
+
+
+par(mfrow = c(1, 2))
+plot(regfit.bwd, scale = "r2")
+plot(regfit.bwd, scale = "adjr2")
+plot(regfit.bwd, scale = "Cp")
+plot(regfit.bwd, scale = "bic")
+```
+
+## Choosing Among Models Using the Validation-Set Approach and Cross-Validation
+
+### Validation-Set Approach
+Problem: very dependant on what observations are in the training and the test sets.
+
+```{r}
+#Splitting the sample
+
+set.seed(6)
+train <- sample(c(TRUE, FALSE), nrow(Gas),
+replace = TRUE)
+test <- (!train)
+
+regfit.best <- regsubsets(gas ~ .,
+data = Gas[train, ], nvmax = 29)
+
+test.mat <- model.matrix(gas ~ ., data = Gas[test, ])
+
+val.errors <- rep(NA, 29)
+
+for (i in 1:29) {
+  coefi <- coef(regfit.best, id = i)
+  pred <- test.mat[, names(coefi)] %*% coefi
+  val.errors[i] <- mean((Gas$gas[test] - pred)^2)
+}
+val.errors
+which.min(val.errors)
+
+predict.regsubsets <- function(object, newdata , id, ...) {
+form <- as.formula(object$call[[2]])
+mat <- model.matrix(form, newdata)
+coefi <- coef(object, id = id)
+xvars <- names(coefi)
+mat[, xvars] %*% coefi
+}
+
+regfit.best <- regsubsets(gas ~ ., data = Gas, nvmax = 29)
+coef(regfit.best, 3)
+```
+
+### Cross-Validation
+
+```{r}
+k <- 10
+n <- nrow(Gas)
+set.seed(1)
+folds <- sample(rep(1:k, length = n))
+cv.errors <- matrix(NA, k, 29, dimnames = list(NULL, paste(1:29)))
+
+# Now, we write a for loop that perfoms cross-validation for each size.
+
+for (j in 1:k) {
+best.fit <- regsubsets(gas ~ .,
+data = Gas[folds != j, ], nvmax = 29)
+for (i in 1:29) {
+pred <- predict(best.fit, Gas[folds == j, ], id = i)
+cv.errors[j, i] <-
+mean((Gas$gas[folds == j] - pred)^2) 
+}
+}
+
+mean.cv.errors <- apply(cv.errors, 2, mean)
+mean.cv.errors
+
+par(mfrow = c(1, 1))
+plot(mean.cv.errors, type = "b")
+```
+
+## Performing best subest selection on the full data set in order to obtain the 4-variable model.
+
+```{r}
+reg.best <- regsubsets(gas ~ ., data = Gas,
+nvmax = 29)
+coef(reg.best, 4)
+
+# So the best model has 4 variables: fpov, awpw, aaepw, and shigh.
+
+reg.best.summary <- summary(reg.best)
+reg.best.summary
+
+reg.best.summary$rss[4]
+reg.best.summary$rsq[4]
+reg.best.summary$adjr2[4]
+reg.best.summary$bic[4]
+reg.best.summary$cp[4]
+```
+
+# Regularization Techniques
+
+## Lasso
+```{r}
+library(tidyverse)
+library(janitor)
+library(glmnet)
+
+Gas <- subset(Gas0, select = -c(county))
+# Fit Lasso model (alpha = 1)
+lasso_cv <- cv.glmnet(X, y, alpha = 1, nfolds = 10)
+
+ # Plot the cross-validation curve
+plot(lasso_cv)
+title("Lasso: 10-fold Cross-Validation", line = 2.5)
+
+# Get the lambda that gives minimum MSE
+lasso_cv$lambda.min
+
+# Get the lambda within 1 standard error (simpler model)
+lasso_cv$lambda.1se
+lasso_model <- glmnet(X, y, alpha = 1, lambda = lasso_cv$lambda.min)
+
+# Show coefficients
+coef(lasso_model)
+predictions <- predict(lasso_model, newx = X)
+
+# Evaluate performance
+lasso_rmse <- sqrt(mean((y - predictions)^2))
+lasso_r2 <- 1 - sum((y - predictions)^2) / sum((y - mean(y))^2)
+lasso_rmse
+lasso_r2
+
+#making modifications to LASSO
+Gas$fpov_unemp <- Gas$fpov * Gas$unemp
+
+# Recreate model matrix with interaction included
+X_lasso_int <- model.matrix(Gas$gas ~ ., data = Gas)
+y_lasso <- Gas$gas
+
+# Fit Lasso with interaction term
+lasso_int_cv <- cv.glmnet(X_lasso_int, y_lasso, alpha = 1, nfolds = 10)
+
+
+# Evaluate
+lasso_int_rmse <- sqrt(mean((y_lasso - predict(lasso_int_cv, newx = X_lasso_int, s = "lambda.min"))^2))
+lasso_int_r2 <- 1 - sum((y_lasso - predict(lasso_int_cv, newx = X_lasso_int, s = "lambda.min"))^2) / sum((y_lasso - mean(y_lasso))^2)
+
+# Output
+lasso_int_rmse
+lasso_int_r2
+coef(lasso_int_cv, s = "lambda.min")
+
+#Polynomial terms
+Gas$shigh_sq <- Gas$shigh^2
+Gas$mhi_sq <- Gas$mhi^2
+
+# Rebuild model matrix
+X_lasso_poly <- model.matrix(gas ~ ., data = Gas)
+
+# Fit Lasso with polynomial terms
+lasso_poly_cv <- cv.glmnet(X_lasso_poly, y_lasso, alpha = 1, nfolds = 10)
+
+# Evaluate
+lasso_poly_rmse <- sqrt(mean((y_lasso - predict(lasso_poly_cv, newx = X_lasso_poly, s = "lambda.min"))^2))
+lasso_poly_r2 <- 1 - sum((y_lasso - predict(lasso_poly_cv, newx = X_lasso_poly, s = "lambda.min"))^2) / sum((y_lasso - mean(y_lasso))^2)
+
+# Output
+lasso_poly_cv$lambda.min
+lasso_poly_rmse
+lasso_poly_r2
+coef(lasso_poly_cv, s = "lambda.min")
+
+# Log-transform response variable
+Gas$log_gas <- log1p(Gas$gas)
+
+# Use same predictors as before (without interaction/poly)
+X_lasso_log <- model.matrix(log_gas ~ . - gas - log_gas, data = Gas)
+y_log <- Gas$log_gas
+
+# Fit Lasso with log-transformed outcome
+lasso_log_cv <- cv.glmnet(X_lasso_log, y_log, alpha = 1, nfolds = 10)
+
+# Predict and evaluate on log scale
+pred_log <- predict(lasso_log_cv, newx = X_lasso_log, s = "lambda.min")
+lasso_log_rmse <- sqrt(mean((y_log - pred_log)^2))
+lasso_log_r2 <- 1 - sum((y_log - pred_log)^2) / sum((y_log - mean(y_log))^2)
+
+# Output
+lasso_log_cv$lambda.min
+lasso_log_rmse
+lasso_log_r2
+coef(lasso_log_cv, s = "lambda.min")
+```
+
+
+## Ridge
+```{r}
+# Drop extra columns not used in baseline
+Gas <- subset(Gas0, select = -c(county))
+
+X_ridge <- model.matrix(gas ~ ., data = Gas)
+y_ridge <- Gas$gas
+
+# Fit Ridge again
+set.seed(123)
+ridge_cv <- cv.glmnet(X_ridge, y_ridge, alpha = 0, nfolds = 10)
+
+# Evaluate again
+pred_ridge <- predict(ridge_cv, newx = X_ridge, s = "lambda.min")
+ridge_rmse <- sqrt(mean((y_ridge - pred_ridge)^2))
+ridge_r2 <- 1 - sum((y_ridge - pred_ridge)^2) / sum((y_ridge - mean(y_ridge))^2)
+
+ridge_cv$lambda.min
+ridge_rmse
+ridge_r2
+coef(ridge_cv, s = "lambda.min")
+
+# Plot the cross-validation curve
+plot(ridge_cv)
+title("Ridge Regression - 10-fold Cross-Validation", line = 2.5)
+
+# add a vertical line at lambda.min
+abline(v = log(ridge_cv$lambda.min), col = "red", lty = 2)
+```
+
+## Elastic Net
+```{r}
+# Create model matrix (cleaned version)
+Gas <- subset(Gas0, select = -c(county))
+
+X_elastic <- model.matrix(gas ~ ., data = Gas)
+y_elastic <- Gas$gas
+
+# Fit model
+set.seed(123)
+elastic_cv <- cv.glmnet(X_elastic, y_elastic, alpha = 0.5, nfolds = 10)
+
+# Evaluate
+pred_elastic <- predict(elastic_cv, newx = X_elastic, s = "lambda.min")
+elastic_rmse <- sqrt(mean((y_elastic - pred_elastic)^2))
+elastic_r2 <- 1 - sum((y_elastic - pred_elastic)^2) / sum((y_elastic - mean(y_elastic))^2)
+
+# Outputs
+elastic_cv$lambda.min
+elastic_rmse
+elastic_r2
+coef(elastic_cv, s = "lambda.min")
+
+# Cross-validation curve for Elastic Net
+plot(elastic_cv)
+title("Elastic Net - 10-fold Cross-Validation", line = 2.5)
+
+# Vertical line at lambda.min
+abline(v = log(elastic_cv$lambda.min), col = "red", lty = 2)
+
+```
+
+
+## PCA 
+
+```{r}
+rm(list = ls())
+library(readr)
+library(ggplot2)
+library(factoextra)  # For visualizing PCA clearly
+
+nc_data <- read_csv("nc_gas_scaled.csv")
+
+# Remove the dependent variable "GAS" from the predictor set
+predictors <- nc_data[, !(names(nc_data) %in% c("GAS"))]
+
+# Perform PCA (the data is already scaled, so scale = FALSE)
+pca_result <- prcomp(predictors, scale. = FALSE)
+
+# Summarize PCA results
+summary(pca_result)
+
+# PCA Variance Explained
+fviz_eig(pca_result, addlabels = TRUE, barfill = "steelblue", barcolor = "steelblue",
+         linecolor = "red", main = "Scree Plot - Variance Explained by PCA")
+
+# Visualize contributions of variables on PC1 and PC2
+fviz_pca_var(pca_result,
+             col.var = "contrib",  # Color by contributions to variance
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE,  # Prevent overlapping labels
+             title = "Variable Contributions to PC1 and PC2")
+
+# Extract PCA loadings (variable contributions)
+loadings <- pca_result$rotation[, 1:5]  # Top 5 principal components
+print(loadings)
+
+# Extract PCA scores (principal component scores for each county)
+pca_scores <- pca_result$x[, 1:5]  # Top 5 principal components
+head(pca_scores)
+
+# Correlate PCA scores with the dependent variable GAS
+correlations <- cor(pca_scores, nc_data$GAS)
+print(correlations)
+```
+
+# Non-linear Approaches
+
+```{r}
+rm(list = ls())
+
+# Loading our regularized data & raw data
+Gas0 <- read.csv("nc_gas_scaled.csv", na.strings = "?", stringsAsFactors = T )
+Gas_raw <- read.csv("nc_gas_scaled.csv", na.strings = "?", stringsAsFactors = T )
+
+# Set up a 3x3 plotting grid
+par(mfrow = c(2, 4), mar = c(4, 4, 3, 1))  # 2 rows, 3 columns, adjusted margins
+
+# Scatterplot: gas vs fpov
+plot(Gas0$fpov, Gas0$gas,
+     main = "Gas vs fpov",
+     xlab = "Families below poverty line",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$fpov, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs ppov
+plot(Gas0$ppov, Gas0$gas,
+     main = "Gas vs ppov",
+     xlab = "People below poverty line",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$ppov, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs white
+plot(Gas0$white, Gas0$gas,
+     main = "Gas vs white",
+     xlab = "White population (%)",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$white, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs munp
+plot(Gas0$munp, Gas0$gas,
+     main = "Gas vs munp",
+     xlab = "Municipal road length",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$munp, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs shigh
+plot(Gas0$shigh, Gas0$gas,
+     main = "Gas vs shigh",
+     xlab = "State highway length",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$shigh, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs retax
+plot(Gas0$retax, Gas0$gas,
+     main = "Gas vs retax",
+     xlab = "Real estate taxes (mortgaged)",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$retax, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs awpw
+plot(Gas0$awpw, Gas0$gas,
+     main = "Gas vs awpw",
+     xlab = "Annual Wages by 
+     Place of Work",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$awpw, Gas0$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs aaepw
+plot(Gas0$aaepw, Gas0$gas,
+     main = "Gas vs aaepw",
+     xlab = "Average Annual Employment 
+     by Place of Work",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas0$aaepw, Gas0$gas), col = "blue", lwd = 2)
+
+# Choosing the model we get from lasso.
+Gas_lasso <- subset(Gas0, select = c("fpov", "ppov", "white", "munp", "shigh", "retax", "gas"))
+vars <- c("fpov", "ppov", "white", "munp", "shigh", "retax")
+
+# Set up a 2x3 plotting grid
+par(mfrow = c(2, 3), mar = c(4, 4, 3, 1))  # 2 rows, 3 columns, adjusted margins
+
+# Scatterplot: gas vs fpov
+plot(Gas_lasso$fpov, Gas_lasso$gas,
+     main = "Gas vs fpov",
+     xlab = "Families below poverty line",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$fpov, Gas_lasso$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs ppov
+plot(Gas_lasso$ppov, Gas_lasso$gas,
+     main = "Gas vs ppov",
+     xlab = "People below poverty line",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$ppov, Gas_lasso$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs white
+plot(Gas_lasso$white, Gas_lasso$gas,
+     main = "Gas vs white",
+     xlab = "White population (%)",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$white, Gas_lasso$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs munp
+plot(Gas_lasso$munp, Gas_lasso$gas,
+     main = "Gas vs munp",
+     xlab = "Municipal road length",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$munp, Gas_lasso$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs shigh
+plot(Gas_lasso$shigh, Gas_lasso$gas,
+     main = "Gas vs shigh",
+     xlab = "State highway length",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$shigh, Gas_lasso$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs retax
+plot(Gas_lasso$retax, Gas_lasso$gas,
+     main = "Gas vs retax",
+     xlab = "Real estate taxes (mortgaged)",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen")
+lines(lowess(Gas_lasso$retax, Gas_lasso$gas), col = "blue", lwd = 2)
+
+```
+
+
+## Linear
+
+```{r}
+lm.fit <- lm(gas ~ ., data = Gas_lasso)
+summary(lm.fit)
+
+# To explore potential nonlinear effects in the predictors selected by Lasso, we fit a natural spline regression using all six variables with four degrees of freedom each. This allowed for flexible, piecewise-polynomial modeling while maintaining interpretability.
+
+set.seed(6)
+glm.fit <- glm(gas ~ ., data = Gas_lasso)
+cv.error <- cv.glm(Gas_lasso, glm.fit, K = 10)
+cv.error$delta
+```
+
+# Natural Splines
+
+```{r}
+library(splines)
+
+fit_ns <- lm(gas ~ ns(fpov, df = 4) + ns(ppov, df = 4) + ns(white, df = 4) + ns(munp, df = 4) + ns(shigh, df = 4) + ns(retax, df = 4), data = Gas_lasso)
+
+summary(fit_ns)
+
+set.seed(6)
+
+folds <- sample(rep(1:10, length.out = nrow(Gas_lasso)))
+
+cv_error_ns <- rep(NA, 10)
+
+for (k in 1:10) {
+  
+  train_data <- Gas_lasso[folds != k, ]
+  test_data  <- Gas_lasso[folds == k, ]
+  
+  fit_ns_k <- lm(gas ~ ns(fpov, df = 4) + ns(ppov, df = 4) + ns(white, df = 4) + ns(munp, df = 4) + ns(shigh, df = 4) + ns(retax, df = 4), data = train_data)
+  
+  pred <- predict(fit_ns_k, newdata = test_data)
+  
+  cv_error_ns[k] <- mean((test_data$gas - pred)^2)
+}
+
+cv_error_ns
+mean(cv_error_ns)
+sd(cv_error_ns)
+
+
+# Comparing AIC's
+AIC(lm.fit, fit_ns)
+
+anova(lm.fit, fit_ns)
+
+# Plotting the spline fits for each variable
+library(sjPlot)
+library(patchwork)
+
+# Plot the spline effects
+p1 <- plot_model(fit_ns, type = "pred", terms = c("fpov"))
+p2 <- plot_model(fit_ns, type = "pred", terms = c("ppov"))
+p3 <- plot_model(fit_ns, type = "pred", terms = c("white"))
+p4 <- plot_model(fit_ns, type = "pred", terms = c("munp"))
+p5 <- plot_model(fit_ns, type = "pred", terms = c("shigh"))
+p6 <- plot_model(fit_ns, type = "pred", terms = c("retax"))
+(p1 | p2 | p3) / (p4 | p5 | p6)
+
+
+# For multivariable modeling, we proceed with generalized additive models (GAMs), which provide a more flexible and interpretable framework for capturing non-linearity across multiple predictors.
+
+```
+
+
+# GAM's
+
+# The data will decide how non-linear each variable is without having to manually picking degrees of freedom.
+
+```{r}
+library(mgcv)
+library(boot)
+```
+```{r}
+gam_fit <- gam(gas ~ s(fpov) + s(ppov) + s(white) + s(munp) + s(shigh) + s(retax), data = Gas_lasso)
+summary(gam_fit)
+
+set.seed(6)
+
+# Create 10 folds
+folds <- sample(rep(1:10, length.out = nrow(Gas_lasso)))
+
+cv_error <- rep(NA, 10)
+
+for (k in 1:10) {
+  
+  # Split data
+  train_data <- Gas_lasso[folds != k, ]
+  test_data  <- Gas_lasso[folds == k, ]
+  
+  # Fit GAM on training data
+  gam_fit_k <- gam(gas ~ s(fpov) + s(ppov) + s(white) + s(munp) + s(shigh) + s(retax), 
+                   data = train_data)
+  
+  # Predict on test data
+  pred <- predict(gam_fit_k, newdata = test_data)
+  
+  # Compute Test Error (MSE)
+  cv_error[k] <- mean((test_data$gas - pred)^2)
+}
+
+# View all CV errors
+cv_error
+
+# Average Test Error across folds
+mean(cv_error)
+
+plot(1:10, cv_error, type = "b", pch = 19, col = "blue",
+     main = "GAM Test MSE per Fold", xlab = "Fold", ylab = "Test MSE")
+
+# Automatic plots for each variable
+plot(gam_fit, se = TRUE, shade = TRUE)
+
+# Check AIC
+AIC(lm.fit, fit_ns, gam_fit)
+
+# Check adjusted R-squared
+summary(gam_fit)$r.sq
+
+# Among all models, the generalized additive model (GAM) achieved the best overall performance with an AIC of 742.29, lower than both the linear model (AIC = 770.74) and the natural spline model (AIC = 774.12). The GAM captured both linear and non-linear relationships across predictors while maintaining effectiveness (effective degrees of freedom = 18.8). In particular, the variables representing families below the poverty line (fpov) and state highway length (shigh) displayed primarily linear effects, while white population percentage (white) and municipal road length (munp) exhibited substantial non-linear patterns.
+
+gam.check(gam_fit)
+```
+
+## Trying GAM without ppov
+
+```{r}
+gam_fit2 <- gam(gas ~ s(fpov) + s(white) + s(munp) + s(shigh) + s(retax),
+                data = Gas_lasso)
+
+summary(gam_fit2)
+
+set.seed(6)
+
+# Create 10 folds
+folds <- sample(rep(1:10, length.out = nrow(Gas_lasso)-1))
+
+cv_error2 <- rep(NA, 10)
+
+for (k in 1:10) {
+  
+  # Split data
+  train_data <- Gas_lasso[folds != k, ]
+  test_data  <- Gas_lasso[folds == k, ]
+  
+  # Fit GAM on training data
+  gam_fit_k <- gam(gas ~ s(fpov) + s(white) + s(munp) + s(shigh) + s(retax), 
+                   data = train_data)
+  
+  # Predict on test data
+  pred <- predict(gam_fit_k, newdata = test_data)
+  
+  # Compute Test Error (MSE)
+  cv_error2[k] <- mean((test_data$gas - pred)^2)
+}
+
+# View all CV errors
+cv_error2
+
+# Average Test Error across folds
+mean(cv_error2)
+
+plot(1:10, cv_error2, type = "b", pch = 19, col = "blue",
+     main = "GAM Test MSE per Fold", xlab = "Fold", ylab = "Test MSE")
+
+AIC(gam_fit, gam_fit2)
+```
+
+# Regression Trees
+
+```{r}
+library(tree)
+
+
+# Fit tree
+tree_fit <- tree(gas ~ fpov + white + munp + shigh + retax, data = Gas_lasso)
+
+# Summary
+summary(tree_fit)
+
+plot(tree_fit)
+text(tree_fit, pretty=0)
+
+
+#cross-validate to check best size
+cv.tree_fit <- cv.tree(tree_fit)
+
+plot(cv.tree_fit$size, cv.tree_fit$dev, type = "b")
+
+```
+
+# Random Forest
+
+```{r}
+library(randomForest)
+
+set.seed(123)
+
+# Fit forest
+rf_fit <- randomForest(gas ~ fpov + white + munp + shigh + retax, data = Gas_lasso, importance = TRUE)
+
+# View model
+print(rf_fit)
+
+# Variable Importance
+importance(rf_fit)
+varImpPlot(rf_fit)
+
+# Regression Tree RMSE
+pred_tree <- predict(tree_fit, Gas_lasso)
+sqrt(mean((Gas_lasso$gas - pred_tree)^2))
+
+# Random Forest RMSE
+pred_rf <- predict(rf_fit, Gas_lasso)
+sqrt(mean((Gas_lasso$gas - pred_rf)^2))
+
+# GAM RMSE
+pred_gam <- predict(gam_fit2, Gas_lasso)
+sqrt(mean((Gas_lasso$gas - pred_gam)^2))
+
+```
+
+## Using best susbet Selection Model
+
+```{r}
+Gas_bs <- subset(Gas0, select = c("fpov", "awpw", "aaepw", "shigh", "gas"))
+
+# Scatterplot: gas vs fpov
+plot(Gas_bs$fpov, Gas_bs$gas,
+     main = "Gas vs fpov",
+     xlab = "Families below poverty line",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas_bs$fpov, Gas_bs$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs awpw
+plot(Gas_bs$awpw, Gas_bs$gas,
+     main = "Gas vs awpw",
+     xlab = "Annual Wages by Place of Work",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas_bs$awpw, Gas_bs$gas), col = "blue", lwd = 2)
+
+# Scatterplot: gas vs aaepw
+plot(Gas_bs$aaepw, Gas_bs$gas,
+     main = "Gas vs ",
+     xlab = "Average Annual Employment by Place of Work",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas_bs$aaepw, Gas_bs$gas), col = "blue", lwd = 2)
+
+
+# Scatterplot: gas vs shigh
+plot(Gas_bs$shigh, Gas_bs$gas,
+     main = "Gas vs shigh",
+     xlab = "State highway length",
+     ylab = "Gas Stations",
+     pch = 16, col = "darkgreen") + lines(lowess(Gas_bs$shigh, Gas_bs$gas), col = "blue", lwd = 2)
+
+```
+
+# Linear
+
+```{r}
+lm.fit <- lm(gas ~ ., data = Gas_bs)
+summary(lm.fit)
+```
+
+## Cross-Validating Linear
+
+```{r}
+library(boot)
+library(leaps)
+
+set.seed(6)
+glm.fit <- glm(gas ~ ., data = Gas_bs)
+cv.error <- cv.glm(Gas_bs, glm.fit, K = 10)
+cv.error$delta
+```
+
+# Natural Splines for Best Subset Model
+```{r}
+fit_ns <- lm(gas ~ ns(fpov, df = 4) + ns(awpw, df = 4) + ns(aaepw, df = 4) + ns(shigh, df = 4) , data = Gas_bs)
+summary(fit_ns)
+
+# Comparing AIC's
+AIC(lm.fit, fit_ns)
+```
+
+##  Cross-Validated for Natural Splines 
+
+```{r}
+set.seed(6)
+
+folds <- sample(rep(1:10, length.out = nrow(Gas_bs)))
+
+cv_error_ns <- rep(NA, 10)
+
+for (k in 1:10) {
+  
+  train_data <- Gas_bs[folds != k, ]
+  test_data  <- Gas_bs[folds == k, ]
+  
+  fit_ns_k <- lm(gas ~ ns(fpov, df=4) + ns(awpw, df=4) + ns(aaepw, df=4) + ns(shigh, df=4), 
+                 data = train_data)
+  
+  pred <- predict(fit_ns_k, newdata = test_data)
+  
+  cv_error_ns[k] <- mean((test_data$gas - pred)^2)
+}
+
+cv_error_ns
+mean(cv_error_ns)
+sd(cv_error_ns)
+```
+
+
+# GAM
+
+```{r}
+gam.fit <- gam(gas ~ s(fpov) + s(awpw) + s(aaepw) + s(shigh), data = Gas_bs)
+summary(gam.fit)
+
+set.seed(6)
+
+# Create 10 folds
+folds <- sample(rep(1:10, length.out = nrow(Gas_bs)-1))
+
+cv_error <- rep(NA, 10)
+
+for (k in 1:10) {
+  
+  # Split data
+  train_data <- Gas_bs[folds != k, ]
+  test_data  <- Gas_bs[folds == k, ]
+  
+  # Fit GAM on training data
+  gam_fit_k <- gam(gas ~ s(fpov) + s(awpw) + s(aaepw) + s(shigh), 
+                   data = train_data)
+  
+  # Predict on test data
+  pred <- predict(gam_fit_k, newdata = test_data)
+  
+  # Compute Test Error (MSE)
+  cv_error[k] <- mean((test_data$gas - pred)^2)
+}
+
+# View all CV errors
+cv_error
+
+# Average Test Error across folds
+mean(cv_error)
+
+# Automatic plots for each variable
+plot(gam.fit, se = TRUE, shade = TRUE)
+
+# Check AIC
+AIC(lm.fit, fit_ns, gam.fit)
+
+# Check adjusted R-squared
+summary(gam.fit)$r.sq
+
+```
+
+# Regression Trees
+
+```{r}
+
+# Fit tree
+tree_fit <- tree(gas ~ fpov + awpw + aaepw + shigh, data = Gas_bs)
+# Summary
+summary(tree_fit)
+
+plot(tree_fit)
+text(tree_fit, pretty=0)
+
+#cross-validate to check best size
+cv.tree_fit <- cv.tree(tree_fit)
+
+plot(cv.tree_fit$size, cv.tree_fit$dev, type = "b")
+
+```
+# Random Forest
+
+```{r}
+set.seed(123)
+
+# Fit forest
+rf_fit <- randomForest(gas ~ fpov + awpw + aaepw + shigh, data = Gas_bs, importance = TRUE)
+
+# View model
+print(rf_fit)
+
+importance(rf_fit)
+
+varImpPlot(rf_fit)
+
+# Regression Tree RMSE
+pred_tree <- predict(tree_fit, Gas_bs)
+sqrt(mean((Gas_bs$gas - pred_tree)^2))
+
+# Random Forest RMSE
+pred_rf <- predict(rf_fit, Gas_bs)
+sqrt(mean((Gas_bs$gas - pred_rf)^2))
+
+# GAM RMSE
+pred_gam <- predict(gam.fit, Gas_bs)
+sqrt(mean((Gas_bs$gas - pred_gam)^2))
+```
+
+
