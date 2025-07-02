@@ -12,6 +12,7 @@ The project explores the extent to which socioeconomic, demographic, and infrast
 
 | File | Description |
 |------|-------------|
+| `data/` | Folder containing all raw and cleaned datasets used in the analysis. |
 | `data-visualization-linear-manual-selection.Rmd` | RMarkdown script for data visualization and linear regression modeling using manual variable selection (including VIF-based removal and diagnostic plots). |
 | `data-visualization-linear-manual-selection.pdf` | Rendered output of the above `.Rmd`, showing results, plots, and interpretations. |
 | `master-code-sheet.Rmd` | Combined reference file containing key functions and model implementations across the project. Serves as a centralized code base. |
